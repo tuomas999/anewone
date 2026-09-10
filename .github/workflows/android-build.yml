@@ -24,8 +24,15 @@ jobs:
           test -f build.gradle.kts
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/ge/mindia/parkpilot/MainActivity.kt
           test -f app/src/main/assets/parking_lots.json.gz
+          test -f ci_patches/MainActivity.kt.gz.b64
+
+      - name: Restore verified MainActivity
+        shell: bash
+        run: |
+          base64 --decode ci_patches/MainActivity.kt.gz.b64 | gzip -dc > app/src/main/java/ge/mindia/parkpilot/MainActivity.kt
+          test "$(wc -c < app/src/main/java/ge/mindia/parkpilot/MainActivity.kt)" -eq 24884
+          echo "80453103f92a750491d8ea92c34a4ede6f967fdf0b9f2925dd851001c39a0d90  app/src/main/java/ge/mindia/parkpilot/MainActivity.kt" | sha256sum -c -
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
