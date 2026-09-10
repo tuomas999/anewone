@@ -24,8 +24,8 @@ jobs:
           test -f build.gradle.kts
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/parking_lots.json.gz
           test -f ci_patches/ma_simple_06.b64
+          test -f ci_parts/part07.b64
 
       - name: Restore integrity-verified MainActivity
         shell: bash
@@ -34,6 +34,35 @@ jobs:
           base64 --decode /tmp/MainActivity.kt.gz.b64 | gzip -dc > app/src/main/java/ge/mindia/parkpilot/MainActivity.kt
           test "$(wc -c < app/src/main/java/ge/mindia/parkpilot/MainActivity.kt)" -eq 22295
           echo "72074a757b9316c485c98788735a543867005dda0c670ae0f1df1bd6d8872e9a  app/src/main/java/ge/mindia/parkpilot/MainActivity.kt" | sha256sum -c -
+
+      - name: Restore verified official parking database
+        shell: bash
+        run: |
+          cat ci_parts/part*.b64 > /tmp/ParkPilot_stage.b64
+          base64 --decode /tmp/ParkPilot_stage.b64 > /tmp/ParkPilot_stage.zip
+          python3 - <<'PY'
+          import gzip, hashlib, json, zipfile
+          zpath = '/tmp/ParkPilot_stage.zip'
+          member = 'ParkPilot/app/src/main/assets/parking_lots.json'
+          with zipfile.ZipFile(zpath) as z:
+              raw = z.read(member)
+          expected = '18adb72868d8183f09e334fde7af50bd1fe9320ccc48bee219a05425d5bc128d'
+          actual = hashlib.sha256(raw).hexdigest()
+          assert actual == expected, (actual, expected)
+          data = json.loads(raw)
+          meta = data['metadata']
+          assert len(data['lots']) == 2240
+          assert meta['recordCount'] == 2240
+          assert meta['totalSpaces'] == 14017
+          assert meta['sourceDate'] == '2026-07-29'
+          out = 'app/src/main/assets/parking_lots.json.gz'
+          with open(out, 'wb') as f:
+              with gzip.GzipFile(filename='', mode='wb', fileobj=f, mtime=0, compresslevel=9) as g:
+                  g.write(raw)
+          with gzip.open(out, 'rb') as g:
+              assert g.read() == raw
+          print('PARKING_DB_OK', len(data['lots']), meta['totalSpaces'], actual)
+          PY
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -72,12 +101,22 @@ jobs:
         if: success()
         run: cp app/build/outputs/apk/debug/app-debug.apk ParkPilot-0.3.2-debug.apk
 
+      - name: Verify APK
+        if: success()
+        shell: bash
+        run: |
+          test -s ParkPilot-0.3.2-debug.apk
+          sha256sum ParkPilot-0.3.2-debug.apk | tee apk.sha256
+          unzip -t ParkPilot-0.3.2-debug.apk >/dev/null
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ParkPilot-0.3.2-debug-apk
-          path: ParkPilot-0.3.2-debug.apk
+          path: |
+            ParkPilot-0.3.2-debug.apk
+            apk.sha256
           if-no-files-found: error
           retention-days: 14
 
