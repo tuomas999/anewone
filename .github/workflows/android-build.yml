@@ -41,7 +41,7 @@ jobs:
           cat ci_parts/part*.b64 > /tmp/ParkPilot_stage.b64
           base64 --decode /tmp/ParkPilot_stage.b64 > /tmp/ParkPilot_stage.zip
           python3 - <<'PY'
-          import gzip, hashlib, json, zipfile
+          import hashlib, json, os, zipfile
           zpath = '/tmp/ParkPilot_stage.zip'
           member = 'ParkPilot/app/src/main/assets/parking_lots.json'
           with zipfile.ZipFile(zpath) as z:
@@ -55,12 +55,12 @@ jobs:
           assert meta['recordCount'] == 2240
           assert meta['totalSpaces'] == 14017
           assert meta['sourceDate'] == '2026-07-29'
-          out = 'app/src/main/assets/parking_lots.json.gz'
-          with open(out, 'wb') as f:
-              with gzip.GzipFile(filename='', mode='wb', fileobj=f, mtime=0, compresslevel=9) as g:
-                  g.write(raw)
-          with gzip.open(out, 'rb') as g:
-              assert g.read() == raw
+          os.makedirs('app/src/main/assets', exist_ok=True)
+          with open('app/src/main/assets/parking_lots.json', 'wb') as f:
+              f.write(raw)
+          gz = 'app/src/main/assets/parking_lots.json.gz'
+          if os.path.exists(gz):
+              os.remove(gz)
           print('PARKING_DB_OK', len(data['lots']), meta['totalSpaces'], actual)
           PY
 
@@ -99,23 +99,34 @@ jobs:
 
       - name: Rename APK
         if: success()
-        run: cp app/build/outputs/apk/debug/app-debug.apk ParkPilot-0.3.2-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk ParkPilot-0.3.3-debug.apk
 
-      - name: Verify APK
+      - name: Verify APK and startup asset
         if: success()
         shell: bash
         run: |
-          test -s ParkPilot-0.3.2-debug.apk
-          sha256sum ParkPilot-0.3.2-debug.apk | tee apk.sha256
-          unzip -t ParkPilot-0.3.2-debug.apk >/dev/null
+          test -s ParkPilot-0.3.3-debug.apk
+          sha256sum ParkPilot-0.3.3-debug.apk | tee apk.sha256
+          unzip -t ParkPilot-0.3.3-debug.apk >/dev/null
+          unzip -l ParkPilot-0.3.3-debug.apk | grep -q 'assets/parking_lots.json'
+          unzip -p ParkPilot-0.3.3-debug.apk assets/parking_lots.json > /tmp/parking_lots.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/parking_lots.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          assert len(data['lots']) == 2240
+          assert data['metadata']['recordCount'] == 2240
+          assert data['metadata']['totalSpaces'] == 14017
+          print('APK_STARTUP_ASSET_OK')
+          PY
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ParkPilot-0.3.2-debug-apk
+          name: ParkPilot-0.3.3-debug-apk
           path: |
-            ParkPilot-0.3.2-debug.apk
+            ParkPilot-0.3.3-debug.apk
             apk.sha256
           if-no-files-found: error
           retention-days: 14
