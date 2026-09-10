@@ -38,10 +38,16 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Unit tests
-        run: gradle --no-daemon --stacktrace testDebugUnitTest
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace testDebugUnitTest |& tee unit-tests.log
 
       - name: Build debug APK
-        run: gradle --no-daemon --stacktrace assembleDebug |& tee build.log
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace assembleDebug |& tee build.log
 
       - name: Rename APK
         if: success()
@@ -62,6 +68,7 @@ jobs:
         with:
           name: ParkPilot-build-diagnostics
           path: |
+            unit-tests.log
             build.log
             app/build/reports/tests/testDebugUnitTest/**
           if-no-files-found: ignore
