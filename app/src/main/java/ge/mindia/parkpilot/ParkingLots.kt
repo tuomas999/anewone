@@ -2,7 +2,6 @@ package ge.mindia.parkpilot
 
 import android.content.Context
 import org.json.JSONObject
-import java.util.zip.GZIPInputStream
 
 object ParkingLots {
     @Volatile private var cache: List<ParkingLot>? = null
@@ -18,7 +17,7 @@ object ParkingLots {
     }
 
     private fun load(context: Context): List<ParkingLot> {
-        val raw = GZIPInputStream(context.assets.open("parking_lots.json.gz")).bufferedReader().use { it.readText() }
+        val raw = context.assets.open("parking_lots.json").bufferedReader(Charsets.UTF_8).use { it.readText() }
         val root = JSONObject(raw)
         val meta = root.optJSONObject("metadata")
         metadataCache = if (meta != null) {
