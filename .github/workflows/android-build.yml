@@ -48,8 +48,12 @@ jobs:
           assert meta['totalSpaces'] == 14017
           assert meta['sourceDate'] == '2026-07-29'
           os.makedirs('app/src/main/assets', exist_ok=True)
+          legacy = 'app/src/main/assets/parking_lots.json.gz'
+          if os.path.exists(legacy):
+              os.remove(legacy)
           with open('app/src/main/assets/parking_lots.json', 'wb') as f:
               f.write(raw)
+          assert not os.path.exists(legacy)
           print('PARKING_DB_OK', len(data['lots']), meta['totalSpaces'], actual)
           PY
 
@@ -98,6 +102,7 @@ jobs:
           sha256sum ParkPilot-0.4.0-debug.apk | tee apk.sha256
           unzip -t ParkPilot-0.4.0-debug.apk >/dev/null
           unzip -l ParkPilot-0.4.0-debug.apk | grep -q 'assets/parking_lots.json'
+          ! unzip -l ParkPilot-0.4.0-debug.apk | grep -q 'assets/parking_lots.json.gz'
           unzip -p ParkPilot-0.4.0-debug.apk assets/parking_lots.json > /tmp/parking_lots.json
           python3 - <<'PY'
           import json
