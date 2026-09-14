@@ -4,13 +4,12 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 
 /**
- * Thin bridge around the official Parking Tbilisi app.
- *
- * ParkPilot never performs the official start/stop action itself. It opens the official
- * application and, when the user comes back, asks for one local confirmation so our helper
- * state stays in sync without requiring the user to hunt for a notification.
+ * User-driven bridge to the official Parking Tbilisi application.
+ * ParkPilot detects the lot and opens the official app; the paid start/stop remains a
+ * user-confirmed action inside the official application.
  */
 class ParkingHandoffActivity : Activity() {
     private lateinit var mode: Mode
@@ -41,14 +40,33 @@ class ParkingHandoffActivity : Activity() {
         if (mode == Mode.START) {
             val code = lotCode
             if (code.isNullOrBlank()) {
+                Toast.makeText(this, "პარკირების ლოტი არჩეული არ არის", Toast.LENGTH_LONG).show()
                 finish()
                 return
             }
             ParkingStore(this).selectPendingLot(code)
             Notifications.offerStartConfirmation(this, code)
-            ParkingTbilisi.copyLotCode(this, code)
         }
-        startActivity(ParkingTbilisi.intent(this))
+
+        val result = ParkingTbilisi.open(this, if (mode == Mode.START) lotCode else null)
+        if (!result.success) {
+            launchedExternal = false
+            showLaunchFailure(result.detail)
+        }
+    }
+
+    private fun showLaunchFailure(detail: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Parking Tbilisi ვერ გაიხსნა")
+            .setMessage("ოფიციალური აპის გახსნა ვერ მოხერხდა ($detail). გადაამოწმე, რომ Parking Tbilisi დაყენებულია და სცადე თავიდან.")
+            .setPositiveButton("თავიდან ცდა") { _, _ ->
+                launchedExternal = true
+                val result = ParkingTbilisi.open(this, if (mode == Mode.START) lotCode else null)
+                if (!result.success) finish()
+            }
+            .setNegativeButton("დახურვა") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     private fun showReturnConfirmation() {
@@ -67,12 +85,10 @@ class ParkingHandoffActivity : Activity() {
                 sendAction(ParkingActionReceiver.ACTION_STARTED, code)
                 finish()
             }
-            .setNegativeButton("ჯერ არა") { _, _ ->
-                finish()
-            }
+            .setNegativeButton("ჯერ არა") { _, _ -> finish() }
             .setNeutralButton("გახსენი ისევ") { _, _ ->
                 dialogShown = false
-                startActivity(ParkingTbilisi.intent(this))
+                ParkingTbilisi.open(this, code)
             }
             .setOnCancelListener { finish() }
             .show()
@@ -87,12 +103,10 @@ class ParkingHandoffActivity : Activity() {
                 sendAction(ParkingActionReceiver.ACTION_STOPPED, session.lotCode)
                 finish()
             }
-            .setNegativeButton("ჯერ არა") { _, _ ->
-                finish()
-            }
+            .setNegativeButton("ჯერ არა") { _, _ -> finish() }
             .setNeutralButton("გახსენი ისევ") { _, _ ->
                 dialogShown = false
-                startActivity(ParkingTbilisi.intent(this))
+                ParkingTbilisi.open(this)
             }
             .setOnCancelListener { finish() }
             .show()
