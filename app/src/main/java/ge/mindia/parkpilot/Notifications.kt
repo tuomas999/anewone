@@ -19,58 +19,75 @@ object Notifications {
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "პარკირების შეხსენებები", NotificationManager.IMPORTANCE_HIGH))
-        manager.createNotificationChannel(NotificationChannel(MONITOR_CHANNEL, "მანქანის მონიტორინგი", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL, "პარკირების შეხსენებები", NotificationManager.IMPORTANCE_HIGH)
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(MONITOR_CHANNEL, "მანქანის მონიტორინგი", NotificationManager.IMPORTANCE_LOW)
+        )
     }
 
-    fun monitor(context: Context, carName: String?, mode: DetectionMode = DetectionMode.BLUETOOTH): Notification = NotificationCompat.Builder(context, MONITOR_CHANNEL)
-        .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-        .setContentTitle("ParkPilot მუშაობს")
-        .setContentText(
-            if (mode == DetectionMode.MOTION_ONLY) "მოძრაობის ტიპს და GPS-ს აკვირდება"
-            else if (carName.isNullOrBlank()) "მანქანის Bluetooth-ს და მოძრაობას აკვირდება"
-            else "$carName — კავშირს და მოძრაობას აკვირდება"
-        )
-        .setContentIntent(mainActivity(context, 300))
-        .setOngoing(true)
-        .build()
+    fun monitor(context: Context, carName: String?, mode: DetectionMode = DetectionMode.BLUETOOTH): Notification =
+        NotificationCompat.Builder(context, MONITOR_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle("ParkPilot მუშაობს")
+            .setContentText(
+                if (mode == DetectionMode.MOTION_ONLY) "GPS-ს და მოძრაობას აკვირდება"
+                else if (carName.isNullOrBlank()) "მანქანის Bluetooth-ს და მოძრაობას აკვირდება"
+                else "$carName • მონიტორინგი ჩართულია"
+            )
+            .setContentIntent(mainActivity(context, 300))
+            .setOngoing(true)
+            .build()
 
     fun offerCandidates(context: Context, candidates: List<ParkingCandidate>, address: String?, evidence: ParkingEvidence) {
         val top = candidates.firstOrNull()
+        val clearTop = top != null && (candidates.size == 1 || top.score - candidates[1].score >= 15)
         val preview = candidates.take(3).joinToString(" • ") { it.code }
+        val mainIntent = if (clearTop && top != null) {
+            handoff(context, top.code, ParkingHandoffActivity.Mode.START, 210)
+        } else {
+            mainActivity(context, 301)
+        }
+
         val b = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle(if (top != null) "სავარაუდო პარკინგი: ${top.code}" else "სავარაუდოდ დააპარკინგე")
+            .setContentTitle(if (clearTop && top != null) "დააპარკინგე? • ${top.code}" else "სავარაუდოდ დააპარკინგე")
             .setContentText(address ?: "პარკირების ადგილი გადაამოწმე")
             .setStyle(NotificationCompat.BigTextStyle().bigText(buildString {
                 if (!address.isNullOrBlank()) append(address).append("\n")
-                if (candidates.isNotEmpty()) append("სავარაუდო ლოტები: $preview\n")
-                append("ParkPilot confidence: ${evidence.score}/100")
+                if (candidates.isNotEmpty()) append("ლოტები: $preview\n")
+                if (clearTop && top != null) append("დააჭირე და გახსენი Parking Tbilisi")
+                else append("აირჩიე სწორი ლოტი ParkPilot-ში")
+                append("\nConfidence: ${evidence.score}/100")
             }))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentIntent(mainActivity(context, 301))
+            .setContentIntent(mainIntent)
             .setAutoCancel(false)
 
-        val clearTop = top != null && (candidates.size == 1 || top.score - candidates[1].score >= 15)
-        if (clearTop && top != null) b.addAction(0, "დაწყება ${top.code}", handoff(context, top.code, ParkingHandoffActivity.Mode.START, 210))
-        b.addAction(0, if (clearTop) "სხვა ლოტი" else "ლოტის არჩევა", mainActivity(context, 211))
-        b.addAction(0, "არ ვპარკინგობ", action(context, ParkingActionReceiver.ACTION_NOT_PARKING, null, 212))
+        if (clearTop && top != null) {
+            b.addAction(0, "გახსენი Parking Tbilisi • ${top.code}", handoff(context, top.code, ParkingHandoffActivity.Mode.START, 211))
+            b.addAction(0, "სხვა ლოტი", mainActivity(context, 212))
+        } else {
+            b.addAction(0, "ლოტის არჩევა", mainActivity(context, 213))
+        }
+        b.addAction(0, "არ ვპარკინგობ", action(context, ParkingActionReceiver.ACTION_NOT_PARKING, null, 214))
         context.getSystemService(NotificationManager::class.java).notify(CANDIDATE_ID, b.build())
     }
 
     fun offerManualLotSelection(context: Context, detail: String, evidence: ParkingEvidence? = null) {
-        val suffix = evidence?.let { "\nParkPilot confidence: ${it.score}/100" }.orEmpty()
+        val suffix = evidence?.let { "\nConfidence: ${it.score}/100" }.orEmpty()
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_search)
-            .setContentTitle("სავარაუდოდ დააპარკინგე — ლოტი აირჩიე")
+            .setContentTitle("დააპარკინგე? • ლოტი აირჩიე")
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$detail\nParkPilot-ში მოძებნე ლოტის კოდი ან მისამართი.$suffix"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(mainActivity(context, 302))
-            .addAction(0, "ლოტის არჩევა", mainActivity(context, 213))
-            .addAction(0, "არ ვპარკინგობ", action(context, ParkingActionReceiver.ACTION_NOT_PARKING, null, 214))
+            .addAction(0, "ლოტის არჩევა", mainActivity(context, 215))
+            .addAction(0, "არ ვპარკინგობ", action(context, ParkingActionReceiver.ACTION_NOT_PARKING, null, 216))
             .setAutoCancel(false)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(CANDIDATE_ID, notification)
@@ -81,13 +98,12 @@ object Notifications {
         val open = handoff(context, code, ParkingHandoffActivity.Mode.START, 202)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("ლოტი $code არჩეულია")
-            .setContentText("$code დაკოპირებულია. Parking Tbilisi-ში ჩართე პარკირება და შემდეგ დააჭირე „დავიწყე“")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("ParkPilot ანგარიშს/პაროლს არ ინახავს. Parking Tbilisi-ში აირჩიე ან ჩასვი $code, ჩართე პარკირება და მხოლოდ შემდეგ დაადასტურე „დავიწყე“."))
+            .setContentTitle("$code • Parking Tbilisi")
+            .setContentText("ოფიციალურ აპში ჩართე პარკირება და შემდეგ დაადასტურე")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setOngoing(true)
-            .addAction(0, "გახსენი Parking", open)
+            .addAction(0, "გახსენი ისევ", open)
             .addAction(0, "დავიწყე", confirm)
             .build()
         context.getSystemService(NotificationManager::class.java).apply {
@@ -101,17 +117,17 @@ object Notifications {
         val stale = age > 18 * 60 * 60 * 1000L
         val confirm = action(context, ParkingActionReceiver.ACTION_STOPPED, session.lotCode, 203)
         val open = handoff(context, null, ParkingHandoffActivity.Mode.STOP, 204)
-        val title = if (stale) "გადაამოწმე ძველი ParkPilot სესია" else "მანქანა დაიძრა — ${session.lotCode ?: ""} ჯერ აქტიურია"
-        val text = if (stale) "ჩანაწერი 18 საათზე ძველია — Parking Tbilisi-ში გადაამოწმე" else detail ?: "Parking Tbilisi-ში დაასრულე პარკირება"
+        val title = if (stale) "გადაამოწმე პარკირების სესია" else "მანქანა დაიძრა • პარკირება ჯერ აქტიურია"
+        val text = if (stale) "ParkPilot-ის ჩანაწერი 18 საათზე ძველია" else detail ?: "Parking Tbilisi-ში დაასრულე პარკირება"
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$text\nParkPilot ავტომატურად არ წყვეტს ფასიან პარკირებას — საბოლოო მოქმედება შენ უნდა დაადასტურო ოფიციალურ აპში."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setOngoing(true)
-            .addAction(0, "გახსენი Parking", open)
+            .setContentIntent(open)
+            .addAction(0, "გახსენი Parking Tbilisi", open)
             .addAction(0, "დავასრულე", confirm)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(STOP_ID, notification)
@@ -121,7 +137,7 @@ object Notifications {
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setContentTitle("ParkPilot მონიტორინგის განახლება")
-            .setContentText("ტელეფონი გადაიტვირთა — გახსენი ParkPilot და ხელახლა ჩართე მონიტორინგი")
+            .setContentText("ტელეფონი გადაიტვირთა — გახსენი ParkPilot")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(mainActivity(context, 305))
             .setAutoCancel(true)
@@ -132,7 +148,8 @@ object Notifications {
     fun cancel(context: Context, id: Int) = context.getSystemService(NotificationManager::class.java).cancel(id)
 
     private fun mainActivity(context: Context, request: Int): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val intent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(context, request, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
